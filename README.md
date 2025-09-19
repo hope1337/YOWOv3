@@ -2,6 +2,12 @@
 
 This is an implementation of paper : [YOWOv3: An Efficient and Generalized Framework for Human Action Detection and Recognition](https://arxiv.org/abs/2408.02623).
 
+# Newsest update
+Hi, I have just gotten some free time for this project.
+Since many people have encountered issues with the model's performance on custom datasets, I'm skeptical about its true capabilities. After dissecting the AVA and UCF101-24 datasets, it seems they have some problems—for example, the distribution between the validation and training sets is too similar, and there's a lack of class balance. I'm currently working on gaining deeper insights and making modifications to improve the model's robustness. You can help me by giving your insights or statistics of your experiments, it would be really helpful and I truly appreciate your support.
+
+I'm working on adding new features based on the feedback in #issues—stay tuned for updates!
+Thank you all, with all my heart <3
 
 ---
 ## Preface 
