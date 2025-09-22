@@ -1,6 +1,6 @@
 BACKBONE2D:
   YOLOv8:
-    ver : x
+    ver : m
 
     PRETRAIN:
       n : weights/backbone2D/YOLOv8/v8_n.pth
@@ -98,11 +98,11 @@ active_checker    : True
 num_classes       : 24
 backbone2D        : yolov8
 backbone3D        : i3d
-fusion_module     : CFAM
+fusion_module     : SE
 mode              : decoupled
 interchannels     : [256, 256, 256]
-pretrain_path     : /home/manh/checkpoint/ucf24/E30/ema_epoch_7.pth
-data_root         : /home/manh/Datasets/UCF101-24/ucf242
+pretrain_path     : checkpoint/ucf_SE_E30_ema_epoch_7.pth
+data_root         : data/ucf24
 img_size          : 224
 clip_length       : 16
 batch_size        : 8

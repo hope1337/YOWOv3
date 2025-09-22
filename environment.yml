@@ -1,4 +1,4 @@
-name: lab
+name: yowov3
 channels:
   - pytorch
   - nvidia

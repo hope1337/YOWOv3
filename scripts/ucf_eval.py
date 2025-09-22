@@ -35,7 +35,7 @@ def eval(config):
     dataset = build_dataset(config, phase='test')
     
     dataloader = data.DataLoader(dataset, 16, False, collate_fn=collate_fn
-                                 , num_workers=8, pin_memory=True)
+                                 , num_workers=6, pin_memory=True)
     
     model = build_yowov3(config)
     get_info(config, model)
