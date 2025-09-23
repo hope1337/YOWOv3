@@ -11,7 +11,10 @@ from PIL import Image
             
 class UCF_dataset(data.Dataset):
 
-    def __init__(self, root_path, split_path, data_path, ann_path, clip_length, sampling_rate, img_size, phase, transform=Augmentation()):
+    def __init__(self, root_path, split_path, 
+                 data_path, ann_path, clip_length, 
+                 sampling_rate, img_size, phase, 
+                 transform=Augmentation()):
         self.root_path     = root_path                                        # path to root folder
         self.split_path    = os.path.join(root_path, split_path)              # path to split file
         self.data_path     = os.path.join(root_path, data_path)               # path to data folder
@@ -44,6 +47,10 @@ class UCF_dataset(data.Dataset):
         path = os.path.join(class_name, video_name) # e.g : Basketball/v_Basketball_g08_c01
         clip        = []
         boxes       = []
+        meta_data   = None
+        if self.phase == "testvmAP":
+            meta_data = [path, key_frame_idx, os.path.join(video_path, '{:05d}.jpg'.format(key_frame_idx))]
+            
         for i in reversed(range(self.clip_length)):
             cur_frame_idx = key_frame_idx - i*self.sampling_rate
 
@@ -59,7 +66,7 @@ class UCF_dataset(data.Dataset):
             cur_frame = Image.open(cur_frame_path).convert('RGB')
             clip.append(cur_frame)
 
-        if get_origin_image == True:
+        if get_origin_image == True or self.phase == "testvmAP":
             key_frame_path     = os.path.join(video_path, '{:05d}.jpg'.format(key_frame_idx))
             original_image     = cv2.imread(key_frame_path)
 
@@ -78,7 +85,7 @@ class UCF_dataset(data.Dataset):
                     onehot_vector = np.zeros(24)
                     onehot_vector[label] = 1.
                     labels.append(onehot_vector)
-                elif self.phase == 'test':
+                elif self.phase == 'test' or self.phase == 'testvmAP':
                     labels.append(label)
 
                 box = [float(line[1]), float(line[2]), float(line[3]), float(line[4])] 
@@ -88,7 +95,7 @@ class UCF_dataset(data.Dataset):
 
         if self.phase == 'train':   
             labels = np.array(labels)
-        elif self.phase == 'test':
+        elif self.phase == 'test' or self.phase == 'testvmAP':
             labels = np.expand_dims(np.array(labels), axis=1)    
 
         targets = np.concatenate((boxes, labels), axis=1)
@@ -98,11 +105,13 @@ class UCF_dataset(data.Dataset):
 
         if self.phase == 'train':
             labels = targets[:, 4:]
-        elif self.phase == 'test':
+        elif self.phase == 'test' or self.phase == 'testvmAP':
             labels = targets[:, -1]
 
         if get_origin_image == True : 
             return original_image, clip, boxes, labels
+        elif self.phase == "testvmAP":
+            return clip, boxes, labels, meta_data
         else:
             return clip, boxes, labels
         
@@ -153,7 +162,7 @@ def build_ucf_dataset(config, phase):
         split_path    = "trainlist.txt"
         return UCF_dataset(root_path, split_path, data_path, ann_path
                           , clip_length, sampling_rate, img_size, transform=Augmentation(img_size=img_size), phase=phase)
-    elif phase == 'test':
+    elif phase == 'test' or phase == 'testvmAP':
         split_path    = "testlist.txt"
         return UCF_dataset(root_path, split_path, data_path, ann_path
                           , clip_length, sampling_rate, img_size, transform=UCF_transform(img_size=img_size), phase=phase)

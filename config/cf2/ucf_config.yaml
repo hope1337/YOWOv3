@@ -91,7 +91,7 @@ LOSS:
     scale_box_loss : 7.5
     scale_dfl_loss : 1.5
 
-config_path       : config/ucf_config.yaml
+config_path       : config/cf2/ucf_config.yaml
 dataset           : ucf
 loss              : tal
 active_checker    : True
@@ -114,8 +114,10 @@ max_step_warmup   : 500
 adjustlr_schedule : [1, 2, 3, 4, 5]
 max_epoch         : 7
 lr_decay          : 0.5
+temp_folder       : temp
 save_folder       : weights/model_checkpoint
 sampling_rate     : 1
+calc_vmAP         : True
 
 
 idx2name:
