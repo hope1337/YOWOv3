@@ -10,6 +10,7 @@ __pycache__/
 weights/
 testing_code/
 lab/
+data/
 lab.py
 
 # Distribution / packaging
