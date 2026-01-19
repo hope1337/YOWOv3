@@ -169,6 +169,7 @@ def detect(config, video_path=None, video_fps=24):
 
     cap.release()
     cv2.destroyAllWindows()
+    print(processed_count)
 
 if __name__ == "__main__":
     config = build_config()
