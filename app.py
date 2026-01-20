@@ -4,16 +4,14 @@ import torchvision.transforms.functional as FT
 import cv2
 import numpy as np
 import time
+import yaml  # <--- Quan trọng: Dùng để đọc file config
 from PIL import Image
-import yaml # <--- Thêm dòng này
-# ... các import khác
 
-# Import các module của bạn (đảm bảo cấu trúc thư mục đúng như lúc chạy CLI)
+# Import các module của bạn
 from utils.box import draw_bounding_box, non_max_suppression
 from model.TSN.YOWOv3 import build_yowov3
-from utils.build_config import build_config
 
-# --- 1. ĐỊNH NGHĨA CLASS HELPER (Giữ nguyên logic của bạn) ---
+# --- 1. CLASS HELPER (Giữ nguyên) ---
 class live_transform():
     def __init__(self, img_size):
         self.img_size = img_size
@@ -22,7 +20,6 @@ class live_transform():
         return FT.to_tensor(image)
     
     def normalize(self, clip):
-        # Chuẩn hóa theo ImageNet (hoặc theo config của bạn)
         mean = torch.FloatTensor([0.485, 0.456, 0.406]).view(-1, 1, 1)
         std  = torch.FloatTensor([0.229, 0.224, 0.225]).view(-1, 1, 1)
         clip -= mean
@@ -35,23 +32,23 @@ class live_transform():
         img = self.normalize(img)
         return img
 
+# --- 2. HÀM LOAD MODEL (Đã sửa lỗi đọc Config) ---
 @st.cache_resource
-def load_model(config_path, checkpoint_path=None):
-    # --- THAY ĐỔI: Tự load config từ file YAML thay vì dùng build_config() mặc định ---
+def load_model(config_path):
+    # Đọc trực tiếp file YAML từ đường dẫn user nhập
     try:
         with open(config_path, 'r') as f:
             cfg = yaml.safe_load(f)
     except FileNotFoundError:
-        st.error(f"Không tìm thấy file config tại: {config_path}")
+        st.error(f"❌ Lỗi: Không tìm thấy file config tại '{config_path}'. Vui lòng kiểm tra lại đường dẫn.")
         st.stop()
-    # ---------------------------------------------------------------------------------
+    except Exception as e:
+        st.error(f"❌ Lỗi đọc file config: {e}")
+        st.stop()
 
-    # Tiếp tục logic cũ
     model = build_yowov3(cfg)
-    
-    # Nếu cần load checkpoint (weights)
-    if checkpoint_path:
-         model.load_state_dict(torch.load(checkpoint_path, map_location='cuda'))
+    # Lưu ý: Nếu cần load weights riêng, bạn có thể thêm logic ở đây
+    # model.load_state_dict(torch.load('path/to/weights.pth', map_location='cuda'))
         
     model.to("cuda")
     model.eval()
@@ -59,129 +56,128 @@ def load_model(config_path, checkpoint_path=None):
 
 # --- 3. GIAO DIỆN CHÍNH ---
 def main():
-    st.set_page_config(layout="wide", page_title="YOWOv3 Video Action Detection")
+    st.set_page_config(layout="wide", page_title="YOWOv3 Action Detection")
     st.title("🎥 YOWOv3 Action Detection Dashboard")
 
-    # --- SIDEBAR: CÁC SETTING ---
+    # --- SIDEBAR ---
     st.sidebar.header("⚙️ Settings")
     
-    # Input paths
+    # Đường dẫn (Default trỏ đúng vào file weights của bạn)
     config_path = st.sidebar.text_input("Config Path (-cf)", value="weights/ucf_config.yaml")
     video_path = st.sidebar.text_input("Video Path (-vd)", value="data/ucf24/videos_generated/Basketball/v_Basketball_g01_c01.mp4")
     
-    # Model params
     conf_thresh = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.3, 0.05)
     iou_thresh = st.sidebar.slider("IoU Threshold", 0.0, 1.0, 0.5, 0.05)
     
-    # Control buttons
     start_btn = st.sidebar.button("▶️ Start Detection")
     stop_btn = st.sidebar.button("⏹️ Stop")
 
-    # --- LOGIC XỬ LÝ ---
     if start_btn:
-        try:
-            # Load Model
-            with st.spinner("Loading Model..."):
-                model, config = load_model(config_path)
-                img_size = config['img_size']
-                mapping = config['idx2name']
-                transform = live_transform(img_size)
+        # --- BƯỚC 1: LOAD MODEL ---
+        with st.spinner("Đang load model..."):
+            model, config = load_model(config_path)
+            img_size = config['img_size']
+            mapping = config['idx2name']
+            transform = live_transform(img_size)
 
-            # Setup Video
-            cap = cv2.VideoCapture(video_path)
-            if not cap.isOpened():
-                st.error(f"Cannot open video: {video_path}")
-                return
+        # --- BƯỚC 2: MỞ VIDEO ---
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            st.error(f"Cannot open video: {video_path}")
+            return
 
-            # Setup giao diện 2 cột
-            col1, col2 = st.columns(2)
-            with col1:
-                st.subheader("Original Video")
-                orig_placeholder = st.empty() # Placeholder để update ảnh
-            with col2:
-                st.subheader("Processed Output (Detection)")
-                proc_placeholder = st.empty() # Placeholder để update ảnh
+        # Setup giao diện 2 cột
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("Original Video")
+            orig_placeholder = st.empty()
+        with col2:
+            st.subheader("Processed Output (Real-time Sync)")
+            proc_placeholder = st.empty()
+        
+        # --- BƯỚC 3: CHUẨN BỊ BIẾN CHO VÒNG LẶP ---
+        video_fps = cap.get(cv2.CAP_PROP_FPS)
+        if video_fps == 0: video_fps = 25 # Fallback
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+        frame_list = []
+        fps_metric = st.sidebar.empty() # Chỗ hiển thị FPS bên sidebar
+        
+        start_program_time = time.time() # Mốc thời gian bắt đầu
+        prev_model_time = time.time()    # Mốc tính FPS model
+        
+        # --- BƯỚC 4: VÒNG LẶP CHÍNH (Đã sync thời gian) ---
+        while True:
+            # Check nút Stop (Streamlit cần cách trick khác để stop mượt, nhưng tạm thời logic này OK)
+            if stop_btn: 
+                break
+
+            # 4.1. Tính vị trí frame cần đọc
+            now = time.time()
+            elapsed_time = now - start_program_time
+            target_frame_idx = int(elapsed_time * video_fps)
+
+            if target_frame_idx >= total_frames:
+                st.success("Video finished.")
+                break
+
+            # 4.2. Nhảy (Seek) đến frame đó
+            cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame_idx)
+            ret, frame = cap.read()
+            if not ret: break
+
+            # 4.3. Hiển thị Video Gốc (Trái)
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            orig_placeholder.image(frame_rgb, channels="RGB", use_container_width=True)
+
+            # 4.4. Xử lý Model
+            display_frame = cv2.resize(frame.copy(), (img_size, img_size))
+            pil_img = Image.fromarray(frame_rgb)
             
-            # Biến buffer và fps
-            frame_list = []
-            fps_metric = st.sidebar.empty() # Hiển thị FPS ở sidebar
+            frame_list.append(transform(pil_img))
+            if len(frame_list) > 16:
+                frame_list.pop(0)
+
+            # Chỉ detect khi đủ buffer
+            if len(frame_list) == 16:
+                clip = torch.stack(frame_list, 0).permute(1, 0, 2, 3).contiguous()
+                clip = clip.unsqueeze(0).to("cuda")
+
+                with torch.no_grad():
+                    outputs = model(clip)
+                    outputs = non_max_suppression(outputs, conf_threshold=conf_thresh, iou_threshold=iou_thresh)[0]
+                
+                # Vẽ Box
+                if outputs is not None:
+                    draw_bounding_box(display_frame, outputs[:, :4], outputs[:, 5], outputs[:, 4], mapping)
+
+                # --- TÍNH TOÁN FPS MODEL ---
+                curr_time = time.time()
+                exec_time = curr_time - prev_model_time
+                model_fps = 1 / exec_time if exec_time > 0 else 0
+                prev_model_time = curr_time
+                
+                # Vẽ thông tin lên hình (Phải)
+                cv2.putText(display_frame, f"Video Frame: {target_frame_idx}", (10, 20), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                cv2.putText(display_frame, f"Model FPS: {model_fps:.2f}", (10, 50), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                
+                # Cập nhật Sidebar metric
+                fps_metric.metric("Model FPS", f"{model_fps:.2f}")
+
+                # Hiển thị Video Kết quả
+                display_rgb = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
+                proc_placeholder.image(display_rgb, channels="RGB", use_container_width=True)
             
-            # --- Trước vòng lặp, khai báo các biến đếm ---
-            prev_time = time.time()
-            frame_count = 0 
+            else:
+                # Màn hình chờ buffer
+                waiting = np.zeros((img_size, img_size, 3), dtype=np.uint8)
+                cv2.putText(waiting, f"Buffering: {len(frame_list)}/16", (10, img_size//2), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+                proc_placeholder.image(waiting, channels="RGB")
 
-            while cap.isOpened():
-                # Check nút Stop
-                if stop_btn:
-                    st.warning("Đã dừng video.")
-                    break
-
-                ret, frame = cap.read()
-                if not ret:
-                    st.info("Video finished.")
-                    break
-
-                # 1. Hiển thị Video Gốc (Bên trái)
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                orig_placeholder.image(frame_rgb, channels="RGB", use_container_width=True)
-
-                # 2. Xử lý cho Model
-                display_frame = cv2.resize(frame.copy(), (img_size, img_size))
-                
-                pil_img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                frame_list.append(transform(pil_img))
-
-                if len(frame_list) > 16:
-                    frame_list.pop(0)
-
-                # Khi đủ buffer 16 frame thì mới detect
-                if len(frame_list) == 16:
-                    clip = torch.stack(frame_list, 0).permute(1, 0, 2, 3).contiguous()
-                    clip = clip.unsqueeze(0).to("cuda")
-
-                    with torch.no_grad():
-                        outputs = model(clip)
-                        outputs = non_max_suppression(outputs, conf_threshold=conf_thresh, iou_threshold=iou_thresh)[0]
-                    
-                    # Vẽ Box nếu có phát hiện
-                    if outputs is not None:
-                        draw_bounding_box(display_frame, outputs[:, :4], outputs[:, 5], outputs[:, 4], mapping)
-                    
-                    # --- PHẦN KHÔI PHỤC: TÍNH VÀ IN FPS LÊN HÌNH ---
-                    curr_time = time.time()
-                    exec_time = curr_time - prev_time
-                    fps = 1 / exec_time if exec_time > 0 else 0
-                    prev_time = curr_time
-                    frame_count += 1
-                    
-                    # In số Frame
-                    cv2.putText(display_frame, f"Frame: {frame_count}", (10, 20), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-                    
-                    # In FPS (Màu xanh lá)
-                    cv2.putText(display_frame, f"FPS: {fps:.2f}", (10, 50), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                    # -----------------------------------------------
-
-                    # Cập nhật metric ở sidebar (nếu muốn giữ)
-                    fps_metric.metric("Model FPS", f"{fps:.2f}")
-
-                    # Hiển thị Video Kết quả (Bên phải)
-                    display_rgb = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
-                    proc_placeholder.image(display_rgb, channels="RGB", use_container_width=True)
-                
-                else:
-                    # Hiển thị màn hình chờ khi chưa đủ frame
-                    waiting_img = np.zeros((img_size, img_size, 3), dtype=np.uint8)
-                    cv2.putText(waiting_img, f"Buffering: {len(frame_list)}/16", (10, img_size//2), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-                    proc_placeholder.image(waiting_img, channels="RGB")
-                
-
-            cap.release()
-
-        except Exception as e:
-            st.error(f"Error occurred: {e}")
+        cap.release()
 
 if __name__ == "__main__":
     main()
