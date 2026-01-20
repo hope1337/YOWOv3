@@ -40,10 +40,10 @@ def load_model(config_path):
         with open(config_path, 'r') as f:
             cfg = yaml.safe_load(f)
     except FileNotFoundError:
-        st.error(f"❌ Lỗi: Không tìm thấy file config tại '{config_path}'. Vui lòng kiểm tra lại đường dẫn.")
+        st.error(f"Lỗi: Không tìm thấy file config tại '{config_path}'. Vui lòng kiểm tra lại đường dẫn.")
         st.stop()
     except Exception as e:
-        st.error(f"❌ Lỗi đọc file config: {e}")
+        st.error(f"Lỗi đọc file config: {e}")
         st.stop()
 
     model = build_yowov3(cfg)
@@ -64,7 +64,7 @@ def main():
     
     # Đường dẫn (Default trỏ đúng vào file weights của bạn)
     config_path = st.sidebar.text_input("Config Path (-cf)", value="weights/ucf_config.yaml")
-    video_path = st.sidebar.text_input("Video Path (-vd)", value="data/ucf24/videos_generated/Basketball/v_Basketball_g01_c01.mp4")
+    video_path = st.sidebar.text_input("Video Path (-vd)", value="data/ucf24/videos_test/Skijet/v_Skijet_g07_c03.mp4")
     
     conf_thresh = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.3, 0.05)
     iou_thresh = st.sidebar.slider("IoU Threshold", 0.0, 1.0, 0.5, 0.05)
@@ -105,6 +105,7 @@ def main():
         
         start_program_time = time.time() # Mốc thời gian bắt đầu
         prev_model_time = time.time()    # Mốc tính FPS model
+        processed_count = 0
         
         # --- BƯỚC 4: VÒNG LẶP CHÍNH (Đã sync thời gian) ---
         while True:
@@ -151,11 +152,11 @@ def main():
                 if outputs is not None:
                     draw_bounding_box(display_frame, outputs[:, :4], outputs[:, 5], outputs[:, 4], mapping)
 
-                # --- TÍNH TOÁN FPS MODEL ---
+                # --- TÍNH TOÁN FPS MODEL (Mới - Giống CLI cũ) ---
+                processed_count += 1 # Cần khai báo biến này = 0 ở trước while
                 curr_time = time.time()
-                exec_time = curr_time - prev_model_time
-                model_fps = 1 / exec_time if exec_time > 0 else 0
-                prev_model_time = curr_time
+                total_time_elapsed = curr_time - start_program_time # Hoặc start_process_metric
+                model_fps = processed_count / total_time_elapsed if total_time_elapsed > 0 else 0
                 
                 # Vẽ thông tin lên hình (Phải)
                 cv2.putText(display_frame, f"Video Frame: {target_frame_idx}", (10, 20), 
