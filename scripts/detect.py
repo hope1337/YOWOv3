@@ -37,10 +37,10 @@ def detect(config):
     model.to("cuda")
     model.eval()
 
-
     for idx in range(dataset.__len__()):
         origin_image, clip, bboxes, labels = dataset.__getitem__(idx, get_origin_image=True)
         #print(bboxes)
+        #print(idx)
 
         clip = clip.unsqueeze(0).to("cuda")
         outputs = model(clip)
@@ -50,14 +50,14 @@ def detect(config):
 
         draw_bounding_box(origin_image, outputs[:, :4], outputs[:, 5], outputs[:, 4], mapping)
 
-        flag = 1 
+        flag = 1
         if flag:
             cv2.imshow('img', origin_image)
-            k = cv2.waitKey(100)
-            if k == ord('q'):
-                return
+            k = cv2.waitKey(1)
+            #if k == ord('q'):
+                #return
         else:
-            cv2.imwrite(r"H:\detect_images\_" + str(idx) + r".jpg", origin_image)
+            cv2.imwrite(r"detect result/_" + str(idx) + r".jpg", origin_image)
 
             print("ok")
             print("image {} saved!".format(idx))
